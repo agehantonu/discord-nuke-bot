@@ -1,1 +1,2 @@
 # discord-nuke-bot
+aiohttpで高速でリクエストを送りまくることにより高速でnukeを行えます
