@@ -1,3 +1,3 @@
-# discord-nuke-bot
-## aiohttpで高速でリクエストを送りまくることにより高速でnukeを行えます
-### [discordサーバーに今すぐ参加しよう](https://discord.gg/5ch)
+
+
+https://cdn.discordapp.com/attachments/1526092483417739346/1526206120182677594/20260713-2118_48c261b433e4ed46c1577f41e8d6207c_1.mp4
